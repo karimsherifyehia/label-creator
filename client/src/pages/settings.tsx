@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@radix-ui/react-label'
 import { useAppStore } from '@/lib/store'
-import { Save, RefreshCw, Printer as PrinterIcon, Info, Cloud } from 'lucide-react'
+import { Save, RefreshCw, Printer as PrinterIcon, Info, Cloud, Bug } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { fetchPrinters } from '@/lib/utils'
+import { fetchPrinters, isRunningOnNetlify } from '@/lib/utils'
 import { Printer, PrintNodeConfig } from '@/lib/types'
 
 export function Settings() {
@@ -21,6 +21,8 @@ export function Settings() {
     apiKey: '',
     printerId: ''
   })
+  const [debugInfo, setDebugInfo] = useState<any>({})
+  const [showDebug, setShowDebug] = useState(false)
   
   const {
     googleSheetUrl,
@@ -47,6 +49,17 @@ export function Settings() {
       setShowPrintNodeConfig(true)
     }
     
+    // Show debug by default on Netlify
+    if (isRunningOnNetlify()) {
+      setShowDebug(true);
+    }
+    
+    // Log some debug info
+    console.log('Settings component mounted');
+    console.log('Available printers:', availablePrinters);
+    console.log('Selected printer:', selectedPrinter);
+    console.log('PrintNode config:', printNodeConfig);
+    
     // Load printers on mount if none available
     if (availablePrinters.length === 0) {
       loadPrinters()
@@ -64,13 +77,50 @@ export function Settings() {
   async function loadPrinters() {
     setLoadingPrinters(true)
     setError(null)
+    setDebugInfo({
+      status: 'loading',
+      timestamp: new Date().toISOString()
+    });
     
     try {
       const printers = await fetchPrinters()
-      setAvailablePrinters(printers)
+      console.log('Printers loaded:', printers);
+      
+      // Add printers even if empty or undefined - with safety checks
+      setAvailablePrinters(Array.isArray(printers) ? printers : []);
+      
+      // Force add PrintNode option if it's missing
+      const hasPrintNodeOption = Array.isArray(printers) && 
+                                printers.some(p => p.type === 'printnode');
+      
+      if (!hasPrintNodeOption) {
+        const printNodePrinter = {
+          id: 'printnode',
+          name: 'PrintNode (Cloud Printing)',
+          location: 'Cloud',
+          isDefault: false,
+          type: 'printnode',
+          description: 'Print to any printer connected to PrintNode'
+        };
+        
+        console.log('Adding PrintNode printer option manually:', printNodePrinter);
+        setAvailablePrinters(prev => 
+          Array.isArray(prev) ? [...prev, printNodePrinter] : [printNodePrinter]
+        );
+      }
+      
+      setDebugInfo(prev => ({
+        ...prev,
+        status: 'success',
+        printers: Array.isArray(printers) ? printers : [],
+        hasPrintNodeOption,
+        manuallyAdded: !hasPrintNodeOption
+      }));
       
       // Check if there are real printers (not mock)
-      const realPrinters = printers.filter((p: Printer) => !p.name.includes('Mock') && p.type !== 'printnode');
+      const realPrinters = Array.isArray(printers) 
+        ? printers.filter((p: Printer) => !p.name.includes('Mock') && p.type !== 'printnode')
+        : [];
       
       toast({
         title: 'Printers Detected',
@@ -78,18 +128,52 @@ export function Settings() {
       })
       
       // Select default printer if available, otherwise first printer if none selected
-      const defaultPrinter = printers.find((p: Printer) => p.isDefault);
-      if (!selectedPrinter && printers.length > 0) {
-        setTempSelectedPrinter(defaultPrinter || printers[0])
+      if (Array.isArray(printers) && printers.length > 0) {
+        const defaultPrinter = printers.find((p: Printer) => p.isDefault);
+        if (!selectedPrinter) {
+          setTempSelectedPrinter(defaultPrinter || printers[0])
+        }
       }
       
     } catch (error) {
+      console.error('Error loading printers:', error);
+      setDebugInfo(prev => ({
+        ...prev,
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error)
+      }));
+      
       toast({
         title: 'Error',
         description: 'Failed to load printers. Using mock printers instead.',
         variant: 'destructive',
       })
       setError('Failed to load printers')
+      
+      // Add mock printers and PrintNode option if loading fails
+      const mockPrinters = [
+        {
+          id: 'printer1',
+          name: 'Office Printer (Mock)',
+          location: 'Main Office',
+          isDefault: true,
+          type: 'mock'
+        },
+        {
+          id: 'printnode',
+          name: 'PrintNode (Cloud Printing)',
+          location: 'Cloud',
+          isDefault: false,
+          type: 'printnode',
+          description: 'Print to any printer connected to PrintNode'
+        }
+      ];
+      
+      setAvailablePrinters(mockPrinters);
+      if (!selectedPrinter) {
+        setTempSelectedPrinter(mockPrinters[0]);
+      }
+      
     } finally {
       setLoadingPrinters(false)
     }
@@ -171,12 +255,36 @@ export function Settings() {
   
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground">
-          Configure your Google integration and printer settings
-        </p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+          <p className="text-muted-foreground">
+            Configure your Google integration and printer settings
+          </p>
+        </div>
+        <Button 
+          variant="ghost" 
+          size="icon"
+          onClick={() => setShowDebug(!showDebug)}
+        >
+          <Bug className="h-5 w-5" />
+        </Button>
       </div>
+      
+      {showDebug && (
+        <div className="border rounded-md p-4 bg-muted/20 space-y-2">
+          <h3 className="font-medium">Debug Information</h3>
+          <pre className="text-xs overflow-auto p-2 bg-muted rounded">
+            {JSON.stringify({
+              isNetlify: isRunningOnNetlify(),
+              availablePrinters: availablePrinters.map(p => ({id: p.id, name: p.name, type: p.type})),
+              hasPrintNode: availablePrinters.some(p => p.type === 'printnode'),
+              debugInfo,
+              selectedPrinter: tempSelectedPrinter ? {id: tempSelectedPrinter.id, name: tempSelectedPrinter.name, type: tempSelectedPrinter.type} : null,
+            }, null, 2)}
+          </pre>
+        </div>
+      )}
       
       <div className="grid gap-6">
         {/* Google Sheets Configuration */}
@@ -305,6 +413,31 @@ export function Settings() {
                     ? 'Scanning for available printers...'
                     : 'Click "Scan for Printers" to find available system printers.'}
                 </p>
+              </div>
+            )}
+            
+            {/* Add PrintNode option if it doesn't exist */}
+            {!availablePrinters.some(p => p.type === 'printnode') && (
+              <div className="mt-4 mb-2">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    const printNodePrinter = {
+                      id: 'printnode',
+                      name: 'PrintNode (Cloud Printing)',
+                      location: 'Cloud',
+                      isDefault: false,
+                      type: 'printnode',
+                      description: 'Print to any printer connected to PrintNode'
+                    };
+                    
+                    setAvailablePrinters(prev => [...prev, printNodePrinter]);
+                    setShowPrintNodeConfig(true);
+                  }}
+                >
+                  <Cloud className="mr-2 h-4 w-4 text-blue-500" />
+                  Add PrintNode Option
+                </Button>
               </div>
             )}
             
