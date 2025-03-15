@@ -8,6 +8,7 @@ import { Save, RefreshCw, Printer as PrinterIcon, Info, Cloud, Bug } from 'lucid
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { fetchPrinters, isRunningOnNetlify } from '@/lib/utils'
 import { Printer, PrintNodeConfig } from '@/lib/types'
+import { createPrintNodePrinter } from '@/lib/store'
 
 export function Settings() {
   const { toast } = useToast()
@@ -440,87 +441,72 @@ export function Settings() {
                 </Button>
               </div>
             )}
-            
-            {/* PrintNode Configuration */}
-            {(showPrintNodeConfig || tempSelectedPrinter?.type === 'printnode') && (
-              <div className="border rounded-md p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Cloud className="h-5 w-5 text-blue-500" />
-                    <h3 className="font-semibold">PrintNode Configuration</h3>
-                  </div>
-                  
-                  {tempSelectedPrinter?.type !== 'printnode' && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setShowPrintNodeConfig(false);
-                        setPrintNodeConfig(null);
-                      }}
-                    >
-                      Hide
-                    </Button>
-                  )}
-                </div>
-                
-                <div className="grid gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="printNodeApiKey">PrintNode API Key</Label>
-                    <input
-                      id="printNodeApiKey"
-                      type="password"
-                      value={tempPrintNodeConfig.apiKey}
-                      onChange={(e) => setTempPrintNodeConfig({
-                        ...tempPrintNodeConfig,
-                        apiKey: e.target.value
-                      })}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      placeholder="Your PrintNode API Key"
-                    />
-                  </div>
-                  
-                  <div className="grid gap-2">
-                    <Label htmlFor="printNodePrinterId">PrintNode Printer ID</Label>
-                    <input
-                      id="printNodePrinterId"
-                      type="text"
-                      value={tempPrintNodeConfig.printerId}
-                      onChange={(e) => setTempPrintNodeConfig({
-                        ...tempPrintNodeConfig,
-                        printerId: e.target.value
-                      })}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      placeholder="PrintNode Printer ID (e.g. 12345)"
-                    />
-                  </div>
-                </div>
-                
-                <div className="text-xs text-muted-foreground">
-                  PrintNode allows you to print to any printer connected to its service. 
-                  <a 
-                    href="https://www.printnode.com/" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-blue-500 hover:underline ml-1"
-                  >
-                    Learn more
-                  </a>
-                </div>
-              </div>
-            )}
-            
-            {/* Printer Access Information */}
-            <div className="flex items-start gap-2 p-3 bg-muted/50 rounded-md">
-              <Info className="h-5 w-5 text-blue-600 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium">About Printer Access</p>
-                <p className="text-xs text-muted-foreground">
-                  The application detects printers installed on your system. If no printers are found, mock printers will be used for demonstration purposes.
-                  You can also use PrintNode for cloud printing to any connected printer. For label printing, you may need to configure the appropriate label size.
-                </p>
-              </div>
+          </div>
+        </div>
+        
+        {/* PrintNode Configuration - ALWAYS show this */}
+        <div className="border rounded-md p-4 space-y-4 mt-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Cloud className="h-5 w-5 text-blue-500" />
+              <h3 className="font-semibold">PrintNode Configuration</h3>
             </div>
+          </div>
+          
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="printNodeApiKey">PrintNode API Key</Label>
+              <input
+                id="printNodeApiKey"
+                type="password"
+                value={tempPrintNodeConfig.apiKey}
+                onChange={(e) => setTempPrintNodeConfig({
+                  ...tempPrintNodeConfig,
+                  apiKey: e.target.value
+                })}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="Your PrintNode API Key"
+              />
+            </div>
+            
+            <div className="grid gap-2">
+              <Label htmlFor="printNodePrinterId">PrintNode Printer ID</Label>
+              <input
+                id="printNodePrinterId"
+                type="text"
+                value={tempPrintNodeConfig.printerId}
+                onChange={(e) => setTempPrintNodeConfig({
+                  ...tempPrintNodeConfig,
+                  printerId: e.target.value
+                })}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="PrintNode Printer ID (e.g. 12345)"
+              />
+            </div>
+          </div>
+          
+          <div className="text-xs text-muted-foreground">
+            PrintNode allows you to print to any printer connected to its service. 
+            <a 
+              href="https://www.printnode.com/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:underline ml-1"
+            >
+              Learn more
+            </a>
+          </div>
+        </div>
+        
+        {/* Printer Access Information */}
+        <div className="flex items-start gap-2 p-3 bg-muted/50 rounded-md">
+          <Info className="h-5 w-5 text-blue-600 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium">About Printer Access</p>
+            <p className="text-xs text-muted-foreground">
+              The application detects printers installed on your system. If no printers are found, mock printers will be used for demonstration purposes.
+              You can also use PrintNode for cloud printing to any connected printer. For label printing, you may need to configure the appropriate label size.
+            </p>
           </div>
         </div>
         

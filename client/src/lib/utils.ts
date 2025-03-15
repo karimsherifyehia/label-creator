@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { PrintOptions } from "./types"
+import { PrintOptions, Printer } from "./types"
+import { createPrintNodePrinter } from "./store"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -91,7 +92,7 @@ export async function printLabel(slideUrl: string, printerId: string, itemData: 
   }
 }
 
-export async function fetchPrinters() {
+export async function fetchPrinters(): Promise<Printer[]> {
   try {
     const apiUrl = buildApiPath('/api/printers');
     console.log('API URL for printers:', apiUrl);
@@ -123,9 +124,38 @@ export async function fetchPrinters() {
     
     const data = await response.json();
     console.log('Printers data received:', data);
+    
+    // Make sure data is an array and has at least one printer
+    if (!Array.isArray(data) || data.length === 0) {
+      console.warn('No printers returned or invalid data format. Using fallback printers.');
+      return getFallbackPrinters();
+    }
+    
+    // Make sure PrintNode is included
+    const hasPrintNode = data.some(p => p.type === 'printnode');
+    if (!hasPrintNode) {
+      console.log('Adding PrintNode printer option');
+      return [...data, createPrintNodePrinter()];
+    }
+    
     return data;
   } catch (error) {
-    console.error('Error fetching printers:', error)
-    throw error
+    console.error('Error fetching printers:', error);
+    return getFallbackPrinters();
   }
+}
+
+// Fallback printers to use when API fails
+function getFallbackPrinters(): Printer[] {
+  console.log('Using fallback printers');
+  return [
+    {
+      id: 'printer1',
+      name: 'Office Printer (Mock)',
+      location: 'Main Office',
+      isDefault: true,
+      type: 'mock'
+    },
+    createPrintNodePrinter()
+  ];
 } 

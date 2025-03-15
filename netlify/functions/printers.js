@@ -26,9 +26,16 @@ export async function handler(event, context) {
   }
   
   try {
-    // In a serverless environment, we can't detect system printers
-    // So we'll return mock printers and a PrintNode option
+    // ALWAYS include PrintNode in the printers array
     const printers = [
+      {
+        id: 'printnode',
+        name: 'PrintNode (Cloud Printing)',
+        location: 'Cloud',
+        isDefault: false,
+        type: 'printnode',
+        description: 'Print to any printer connected to PrintNode'
+      },
       {
         id: 'printer1',
         name: 'Office Printer (Mock)',
@@ -42,23 +49,10 @@ export async function handler(event, context) {
         location: 'Warehouse',
         isDefault: false,
         type: 'mock'
-      },
-      {
-        id: 'printer3',
-        name: 'Label Printer (Mock)',
-        location: 'Shipping Department',
-        isDefault: false,
-        type: 'mock'
-      },
-      {
-        id: 'printnode',
-        name: 'PrintNode (Cloud Printing)',
-        location: 'Cloud',
-        isDefault: false,
-        type: 'printnode',
-        description: 'Print to any printer connected to PrintNode'
       }
     ];
+    
+    console.log('Returning printers including PrintNode:', printers);
     
     return {
       statusCode: 200,
@@ -68,12 +62,20 @@ export async function handler(event, context) {
   } catch (error) {
     console.error('Error fetching printers:', error);
     
+    // Even in case of error, return PrintNode option
     return {
-      statusCode: 500,
+      statusCode: 200,
       headers,
-      body: JSON.stringify({
-        error: 'Failed to fetch printers'
-      })
+      body: JSON.stringify([
+        {
+          id: 'printnode',
+          name: 'PrintNode (Cloud Printing)',
+          location: 'Cloud',
+          isDefault: false,
+          type: 'printnode',
+          description: 'Print to any printer connected to PrintNode'
+        }
+      ])
     };
   }
 } 

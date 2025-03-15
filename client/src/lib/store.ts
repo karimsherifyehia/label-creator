@@ -36,6 +36,17 @@ interface AppState {
   setError: (error: string | null) => void
 }
 
+export function createPrintNodePrinter(): Printer {
+  return {
+    id: 'printnode',
+    name: 'PrintNode (Cloud Printing)',
+    location: 'Cloud',
+    isDefault: false,
+    type: 'printnode',
+    description: 'Print to any printer connected to PrintNode'
+  };
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
@@ -54,7 +65,17 @@ export const useAppStore = create<AppState>()(
       
       // Printer settings
       availablePrinters: [],
-      setAvailablePrinters: (printers) => set({ availablePrinters: printers }),
+      setAvailablePrinters: (printers: Printer[]) => {
+        // Always ensure PrintNode is included in the printer list
+        const hasPrintNode = printers.some(p => p.type === 'printnode');
+        
+        if (!hasPrintNode) {
+          // Add PrintNode if it's missing
+          printers = [...printers, createPrintNodePrinter()];
+        }
+        
+        set({ availablePrinters: printers });
+      },
       
       selectedPrinter: localStorage.getItem('selectedPrinter') 
         ? JSON.parse(localStorage.getItem('selectedPrinter') || '{}')
