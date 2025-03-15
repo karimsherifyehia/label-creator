@@ -1,0 +1,13 @@
+{
+  "name": "label-creator",
+  "version": "1.0.0",
+  "description": "Label Creator application with barcode scanning and PrintNode integration",
+  "scripts": {
+    "build": "cd client && npm install && npm run build",
+    "dev:client": "cd client && npm run dev",
+    "dev:server": "cd server && npm run dev",
+    "dev:netlify": "netlify dev"
+  },
+  "author": "",
+  "license": "MIT"
+} 

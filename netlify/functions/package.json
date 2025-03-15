@@ -1,0 +1,11 @@
+{
+  "name": "label-creator-functions",
+  "version": "1.0.0",
+  "description": "Netlify Functions for Label Creator App",
+  "main": "index.js",
+  "type": "module",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "googleapis": "^128.0.0"
+  }
+} 
