@@ -9,5 +9,9 @@
     "dev:netlify": "netlify dev"
   },
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "googleapis": "^126.0.1"
+  }
 } 

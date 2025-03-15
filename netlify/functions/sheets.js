@@ -84,7 +84,8 @@ async function fetchGoogleSheetData(sheetUrl, barcode) {
   }
 }
 
-export async function handler(event, context) {
+// Use CommonJS exports for the handler
+exports.handler = async function(event, context) {
   // Set CORS headers
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -146,7 +147,4 @@ export async function handler(event, context) {
       })
     };
   }
-}
-
-// Use CommonJS exports
-module.exports = { handler }; 
+} 

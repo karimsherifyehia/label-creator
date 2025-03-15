@@ -77,8 +77,8 @@ async function printWithPrintNode(apiKey, printerId, documentBuffer, options = {
   }
 }
 
-// Use CommonJS exports with async handler
-async function handler(event, context) {
+// Use CommonJS exports for the handler
+exports.handler = async function(event, context) {
   // Set CORS headers
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -172,6 +172,4 @@ async function handler(event, context) {
       })
     };
   }
-}
-
-module.exports = { handler }; 
+} 

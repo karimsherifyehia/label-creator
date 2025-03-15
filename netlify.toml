@@ -4,7 +4,7 @@
   # Directory with code to build
   base = ""
   # Command to run to build the site
-  command = "cd netlify/functions && npm install && cd ../../client && npm install && npm run build"
+  command = "npm install && cd client && npm install && npm run build"
   # Directory to deploy
   publish = "client/dist"
   # Functions directory
