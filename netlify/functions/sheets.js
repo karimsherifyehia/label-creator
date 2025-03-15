@@ -1,4 +1,5 @@
-import axios from 'axios';
+// Use CommonJS require instead of ES modules import
+const axios = require('axios');
 
 // Simplified Google Sheets data fetching for Netlify Functions
 async function fetchGoogleSheetData(sheetUrl, barcode) {
@@ -16,9 +17,20 @@ async function fetchGoogleSheetData(sheetUrl, barcode) {
     console.log(`Sheet ID: ${sheetId}`);
     console.log(`Using mock data for Netlify Function demo`);
     
+    // Add a specific handler for ttac2506
+    if (barcode === 'ttac2506') {
+      return {
+        id: 'TTAC2506',
+        name: 'TTAC2506 - Control Unit',
+        description: 'Advanced control unit for manufacturing equipment',
+        barcode: 'ttac2506',
+        price: 239.99,
+        imageUrl: 'https://via.placeholder.com/150'
+      };
+    }
     // Return mock data based on the barcode
     // Add the user's barcode to the mock data
-    if (barcode === '6941639849728') {
+    else if (barcode === '6941639849728') {
       return {
         id: 'ITEM2023',
         name: 'LED Light Fixture 24W',
@@ -134,4 +146,7 @@ export async function handler(event, context) {
       })
     };
   }
-} 
+}
+
+// Use CommonJS exports
+module.exports = { handler }; 

@@ -1,5 +1,5 @@
-import axios from 'axios';
-import { google } from 'googleapis';
+const axios = require('axios');
+const { google } = require('googleapis');
 
 // Function to populate a Google Slide with data and export as PDF
 async function populateGoogleSlide(slideUrl, itemData) {
@@ -77,7 +77,8 @@ async function printWithPrintNode(apiKey, printerId, documentBuffer, options = {
   }
 }
 
-export async function handler(event, context) {
+// Use CommonJS exports with async handler
+async function handler(event, context) {
   // Set CORS headers
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -171,4 +172,6 @@ export async function handler(event, context) {
       })
     };
   }
-} 
+}
+
+module.exports = { handler }; 

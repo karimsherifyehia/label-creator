@@ -1,4 +1,4 @@
-export async function handler(event, context) {
+async function handler(event, context) {
   // Set CORS headers
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -78,4 +78,7 @@ export async function handler(event, context) {
       ])
     };
   }
-} 
+}
+
+// Use CommonJS exports
+module.exports = { handler }; 
