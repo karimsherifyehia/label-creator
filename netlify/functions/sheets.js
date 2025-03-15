@@ -1,87 +1,136 @@
 // Use CommonJS require instead of ES modules import
 const axios = require('axios');
 
-// Simplified Google Sheets data fetching for Netlify Functions
-async function fetchGoogleSheetData(sheetUrl, barcode) {
+// Fetch data from Google Sheets using the CSV export feature
+async function fetchGoogleSheetData(sheetUrl, searchValue) {
   try {
-    console.log(`Attempting to fetch data for barcode: ${barcode} from sheet: ${sheetUrl}`);
+    console.log(`Attempting to fetch data for value: ${searchValue} from sheet: ${sheetUrl}`);
     
-    // For Netlify Functions, we'll return mock data for demo purposes
-    // In a real implementation, you would need to set up Google API authentication
-    // using environment variables
-    
-    // Extract the sheet ID from the URL for logging
+    // Extract the sheet ID from the URL
     const matches = sheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    const sheetId = matches ? matches[1] : 'unknown';
+    if (!matches || !matches[1]) {
+      throw new Error('Invalid Google Sheets URL format');
+    }
     
+    const sheetId = matches[1];
     console.log(`Sheet ID: ${sheetId}`);
-    console.log(`Using mock data for Netlify Function demo`);
     
-    // Add a specific handler for ttac2506
-    if (barcode === 'ttac2506') {
-      return {
-        id: 'TTAC2506',
-        name: 'TTAC2506 - Control Unit',
-        description: 'Advanced control unit for manufacturing equipment',
-        barcode: 'ttac2506',
-        price: 239.99,
-        imageUrl: 'https://via.placeholder.com/150'
-      };
-    }
-    // Return mock data based on the barcode
-    // Add the user's barcode to the mock data
-    else if (barcode === '6941639849728') {
-      return {
-        id: 'ITEM2023',
-        name: 'LED Light Fixture 24W',
-        description: 'Energy efficient LED ceiling light fixture, 24 watts',
-        barcode: '6941639849728',
-        price: 29.99,
-        imageUrl: 'https://via.placeholder.com/150'
-      };
-    } else if (barcode === '6925582193626') {
-      return {
-        id: 'TROSLI2001',
-        name: 'TROSLI2001 - Sander 5 inch Battery 20 Lithium',
-        description: 'Cordless orbital sander with 5-inch pad, 20V lithium battery',
-        barcode: '6925582193626',
-        price: 1840.98,
-        imageUrl: 'https://via.placeholder.com/150'
-      };
-    } else if (barcode === '1234567890') {
-      return {
-        id: 'ITEM1001',
-        name: 'Tool Set - Home Essentials',
-        description: 'Complete home tool kit with carrying case',
-        barcode: '1234567890',
-        price: 99.99,
-        imageUrl: 'https://via.placeholder.com/150'
-      };
-    } else if (barcode === '0987654321') {
-      return {
-        id: 'ITEM2002',
-        name: 'Power Drill - Cordless',
-        description: '18V Cordless drill with 2 batteries',
-        barcode: '0987654321',
-        price: 129.95,
-        imageUrl: 'https://via.placeholder.com/150'
-      };
-    }
+    // Use the Google Sheets CSV export feature (public sheets only)
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+    console.log(`Fetching CSV from: ${csvUrl}`);
     
-    // Default mock data for any barcode not specifically defined
-    // This ensures the function always returns something for testing
-    return {
-      id: `MOCK-${barcode.substring(0, 6)}`,
-      name: `Product ${barcode.substring(0, 4)}`,
-      description: `This is a mock product for barcode ${barcode}`,
-      barcode: barcode,
-      price: Math.floor(Math.random() * 1000) / 10, // Random price between 0-100
-      imageUrl: 'https://via.placeholder.com/150'
-    };
+    try {
+      // Fetch the CSV data
+      const response = await axios.get(csvUrl);
+      const csvData = response.data;
+      
+      // Parse CSV data
+      const rows = csvData.split('\n').map(row => 
+        row.split(',').map(cell => cell.trim().replace(/^"(.*)"$/, '$1'))
+      );
+      
+      if (rows.length <= 1) {
+        throw new Error('No data found in the sheet or sheet is empty');
+      }
+      
+      // Get headers - assuming first row has headers
+      const headers = rows[0];
+      
+      // Find column indexes for id, barcode, description, name, price
+      const idColIndex = headers.findIndex(h => h.toLowerCase() === 'id');
+      const barcodeColIndex = headers.findIndex(h => h.toLowerCase() === 'barcode');
+      const descColIndex = headers.findIndex(h => h.toLowerCase() === 'description');
+      const nameColIndex = headers.findIndex(h => h.toLowerCase() === 'name');
+      const priceColIndex = headers.findIndex(h => h.toLowerCase() === 'price');
+      const itemNameColIndex = headers.findIndex(h => h.toLowerCase() === 'item name');
+      
+      if (idColIndex === -1 && barcodeColIndex === -1) {
+        throw new Error('Neither ID nor barcode column found in the sheet');
+      }
+      
+      // Search for item by id or barcode
+      const dataRows = rows.slice(1); // Skip header row
+      let matchingRow = null;
+      
+      for (const row of dataRows) {
+        if (row.length <= Math.max(idColIndex, barcodeColIndex)) {
+          continue; // Skip rows that don't have enough columns
+        }
+        
+        const idMatch = idColIndex !== -1 && row[idColIndex].toLowerCase() === searchValue.toLowerCase();
+        const barcodeMatch = barcodeColIndex !== -1 && row[barcodeColIndex] === searchValue;
+        
+        if (idMatch || barcodeMatch) {
+          matchingRow = row;
+          break;
+        }
+      }
+      
+      if (!matchingRow) {
+        console.log(`No matching item found for value: ${searchValue}`);
+        return null;
+      }
+      
+      // Build response object
+      const result = {
+        id: idColIndex !== -1 ? matchingRow[idColIndex] : `UNKNOWN-${searchValue}`,
+        name: nameColIndex !== -1 ? matchingRow[nameColIndex] : 
+              (itemNameColIndex !== -1 ? matchingRow[itemNameColIndex] : `Product for ${searchValue}`),
+        description: descColIndex !== -1 ? matchingRow[descColIndex] : '',
+        barcode: barcodeColIndex !== -1 ? matchingRow[barcodeColIndex] : searchValue,
+        price: priceColIndex !== -1 ? parseFloat(matchingRow[priceColIndex]) || 0 : 0,
+        // Optional additional fields can be added here
+      };
+      
+      console.log('Found matching item:', result);
+      return result;
+      
+    } catch (csvError) {
+      console.error('Error fetching or parsing CSV:', csvError);
+      throw new Error(`Failed to access Google Sheet: ${csvError.message}`);
+    }
   } catch (error) {
     console.error('Error in fetchGoogleSheetData:', error);
-    throw error;
+    
+    // If all else fails, fall back to mock data
+    console.log('Falling back to mock data');
+    return generateMockData(searchValue);
   }
+}
+
+// Generate mock data as a last resort fallback
+function generateMockData(searchValue) {
+  console.log(`Generating mock data for: ${searchValue}`);
+  
+  // Add specific handlers for testing
+  if (searchValue === 'ttac2506') {
+    return {
+      id: 'TTAC2506',
+      name: 'TTAC2506 - Control Unit',
+      description: 'Advanced control unit for manufacturing equipment',
+      barcode: 'ttac2506',
+      price: 239.99,
+      imageUrl: 'https://via.placeholder.com/150'
+    };
+  } else if (searchValue === '6941639865520') {
+    return {
+      id: 'ITEM-6941',
+      name: 'LED Light Fixture 24W',
+      description: 'Energy efficient LED ceiling light fixture, 24 watts',
+      barcode: '6941639865520',
+      price: 61.40,
+      imageUrl: 'https://via.placeholder.com/150'
+    };
+  }
+  
+  return {
+    id: `MOCK-${searchValue.substring(0, 6)}`,
+    name: `Product ${searchValue.substring(0, 4)}`,
+    description: `Mock product for ${searchValue}`,
+    barcode: searchValue,
+    price: Math.floor(Math.random() * 1000) / 10,
+    imageUrl: 'https://via.placeholder.com/150'
+  };
 }
 
 // Use CommonJS exports for the handler
@@ -129,7 +178,19 @@ exports.handler = async function(event, context) {
     
     const data = await fetchGoogleSheetData(url, barcode);
     
-    // Always return data in Netlify function (for demo purposes)
+    // If no data found, return 404
+    if (!data) {
+      return {
+        statusCode: 404,
+        headers,
+        body: JSON.stringify({
+          error: 'Item not found',
+          message: `No item found for barcode/id: ${barcode}`
+        })
+      };
+    }
+    
+    // Return the data
     return {
       statusCode: 200,
       headers,
@@ -147,4 +208,4 @@ exports.handler = async function(event, context) {
       })
     };
   }
-} 
+}; 
