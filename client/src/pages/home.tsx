@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { useAppStore } from '@/lib/store'
 import { fetchGoogleSheetData, printLabel, formatCurrency } from '@/lib/utils'
-import { Printer, Barcode, AlertTriangle, X } from 'lucide-react'
+import { Printer, Barcode, AlertTriangle, X, Bug } from 'lucide-react'
 import { LabelPreview } from '@/components/LabelPreview'
 import { PrintOptions } from '@/lib/types'
 
@@ -14,7 +14,10 @@ export function Home() {
   const [barcodeInput, setBarcodeInput] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
-  const [isScanning, setIsScanning] = useState(false) // Added to show scanning status
+  const [isScanning, setIsScanning] = useState(false)
+  const [pdaMode, setPdaMode] = useState(true) // Default to PDA mode ON
+  const [debugMode, setDebugMode] = useState(false)
+  const [keyEvents, setKeyEvents] = useState<string[]>([])
   
   // Simple barcode buffer to collect characters
   const barcodeBufferRef = useRef('')
@@ -65,87 +68,111 @@ export function Home() {
     }
   }, [manualEntry])
 
-  // Handle barcode scan input - simplified approach based on time intervals
+  // Direct PDA scan mode - uses an aggressive approach to catch all scan types
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      // Don't capture if typing in input fields other than our barcode input
-      const isTypingInInput = document.activeElement?.tagName === 'INPUT' && 
-                             document.activeElement !== manualInputRef.current;
-      
-      // Don't capture if in editable areas
-      const isTypingElsewhere = document.activeElement?.getAttribute('contenteditable') === 'true' ||
-                              document.activeElement?.tagName === 'TEXTAREA';
-      
-      if (isTypingInInput || isTypingElsewhere || isProcessing) {
+    if (!pdaMode || manualEntry) return;
+    
+    // Listen for pasted content - some scanners simulate paste
+    const handlePaste = (e: ClipboardEvent) => {
+      const pastedText = e.clipboardData?.getData('text');
+      if (pastedText && pastedText.length > 3) {
+        if (debugMode) {
+          setKeyEvents(prev => [...prev, `Paste detected: ${pastedText}`]);
+        }
+        processBarcode(pastedText);
+      }
+    };
+    
+    // Setup sequence detection for rapid key entry
+    let keySequence = '';
+    let lastKeyTime = 0;
+    let sequenceTimer: number | null = null;
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if manually typing in fields
+      if ((document.activeElement?.tagName === 'INPUT' && document.activeElement !== manualInputRef.current) ||
+          document.activeElement?.tagName === 'TEXTAREA' ||
+          document.activeElement?.getAttribute('contenteditable') === 'true') {
         return;
       }
       
-      // If in manual entry mode, only handle when the input field is focused
-      if (manualEntry) {
-        return; // Let the input field handle it
+      // Record key events for debugging
+      if (debugMode) {
+        setKeyEvents(prev => {
+          const newEvents = [...prev, `Key: ${e.key} (${Date.now()})`];
+          return newEvents.slice(-10); // Keep last 10 events
+        });
       }
       
-      const now = Date.now();
-      const timeDiff = now - lastKeypressTimeRef.current;
-      
-      // Clear any existing timeout
-      if (scanTimeoutRef.current !== null) {
-        window.clearTimeout(scanTimeoutRef.current);
-      }
-      
-      // Process immediate terminators (Enter or Tab)
+      // Handle enter or tab as terminators
       if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault(); // Prevent default actions
-        
-        // Only process if we have characters in the buffer
-        if (barcodeBufferRef.current.length > 0) {
-          console.log('Scan completed by Enter/Tab key:', barcodeBufferRef.current);
-          const barcode = barcodeBufferRef.current;
-          barcodeBufferRef.current = '';
-          setIsScanning(false);
-          processBarcode(barcode);
+        e.preventDefault();
+        if (keySequence.length > 3) {
+          if (debugMode) {
+            setKeyEvents(prev => [...prev, `Scan completed by ${e.key}: ${keySequence}`]);
+          }
+          processBarcode(keySequence);
+          keySequence = '';
+          if (sequenceTimer) clearTimeout(sequenceTimer);
         }
         return;
       }
       
-      // If it's a long gap, reset and start a new scan
-      if (timeDiff > 300) {
-        console.log('Starting new scan');
-        barcodeBufferRef.current = '';
+      const now = Date.now();
+      const timeSinceLastKey = now - lastKeyTime;
+      
+      // Typical scanner sends keys very rapidly (<50ms apart)
+      const isPossiblyScanner = timeSinceLastKey < 50;
+      
+      // If it's been a while, start fresh
+      if (timeSinceLastKey > 500) {
+        keySequence = '';
         setIsScanning(true);
       }
       
-      // Accept a wider range of characters that might appear in barcodes
-      if (/^[\w\d\-\/\+\.=%]$/.test(e.key)) {
-        // Add character to buffer
-        barcodeBufferRef.current += e.key;
-        // Update visual display
-        setBarcodeInput(barcodeBufferRef.current);
+      // Only collect reasonable barcode characters
+      if (/^[\w\d\-\/\+\.=%:;]$/.test(e.key)) {
+        keySequence += e.key;
+        setBarcodeInput(keySequence);
         
-        // Set a timeout to finalize the scan after a pause
-        scanTimeoutRef.current = window.setTimeout(() => {
-          if (barcodeBufferRef.current.length > 3) {
-            console.log('Scan completed by timeout:', barcodeBufferRef.current);
-            const barcode = barcodeBufferRef.current;
-            barcodeBufferRef.current = '';
+        // Clear any pending timeout
+        if (sequenceTimer) clearTimeout(sequenceTimer);
+        
+        // Set new timeout - if keys stop coming, process what we have
+        sequenceTimer = window.setTimeout(() => {
+          if (keySequence.length > 3) {
+            if (debugMode) {
+              setKeyEvents(prev => [...prev, `Scan completed by timeout: ${keySequence}`]);
+            }
+            processBarcode(keySequence);
+            keySequence = '';
             setIsScanning(false);
-            processBarcode(barcode);
           }
-        }, 200); // Increased timeout for PDA scanners
+        }, 300); // Longer timeout for PDA
       }
       
-      lastKeypressTimeRef.current = now;
-    }
+      lastKeyTime = now;
+    };
     
-    window.addEventListener('keydown', handleKeyDown);
-    
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      if (scanTimeoutRef.current !== null) {
-        window.clearTimeout(scanTimeoutRef.current);
+    // Handle focus events - some scanners trigger focus before sending keys
+    const handleFocus = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (debugMode) {
+        setKeyEvents(prev => [...prev, `Focus event on: ${target?.tagName || 'unknown'}`]);
       }
     };
-  }, [manualEntry, isProcessing]);
+    
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('paste', handlePaste);
+    document.addEventListener('focus', handleFocus, true);
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('paste', handlePaste);
+      document.removeEventListener('focus', handleFocus, true);
+      if (sequenceTimer) clearTimeout(sequenceTimer);
+    };
+  }, [pdaMode, manualEntry, debugMode]);
   
   // Process the barcode and fetch data
   async function processBarcode(barcode: string) {
@@ -238,40 +265,65 @@ export function Home() {
   
   return (
     <div className="flex flex-col h-full">
-      <div className="mb-8">
+      <div className="mb-4">
         <h1 className="text-3xl font-bold tracking-tight">Barcode Scanner</h1>
         <p className="text-muted-foreground">
           Scan a barcode or enter an ID to retrieve item details and print a label
         </p>
       </div>
       
+      {/* Scanner Mode Controls */}
+      <div className="flex flex-wrap items-center gap-4 mb-4 p-3 border rounded-md bg-muted/30">
+        <div className="flex items-center space-x-2">
+          <input 
+            type="checkbox" 
+            id="pda-mode" 
+            checked={pdaMode} 
+            onChange={(e) => setPdaMode(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+          />
+          <label htmlFor="pda-mode" className="text-sm font-medium">PDA Scanner Mode</label>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <input 
+            type="checkbox" 
+            id="debug-mode" 
+            checked={debugMode} 
+            onChange={(e) => setDebugMode(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+          />
+          <label htmlFor="debug-mode" className="text-sm font-medium">Debug Mode</label>
+        </div>
+        
+        <Button 
+          onClick={() => setManualEntry(!manualEntry)}
+          variant={manualEntry ? "default" : "outline"}
+          size="sm"
+        >
+          {manualEntry ? "Cancel Manual Entry" : "Manual Entry"}
+        </Button>
+      </div>
+      
       {/* Barcode Input */}
       <div className="grid gap-4 mb-8">
-        <div className="flex items-center gap-2">
-          <Button 
-            onClick={() => setManualEntry(!manualEntry)}
-            variant={manualEntry ? "default" : "outline"}
-          >
-            {manualEntry ? "Cancel Manual Entry" : "Manual Entry"}
-          </Button>
-          {manualEntry && (
-            <div className="flex flex-1 items-center gap-2">
-              <input
-                type="text"
-                value={barcodeInput}
-                onChange={(e) => setBarcodeInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && processBarcode(barcodeInput)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                placeholder="Enter barcode or ID"
-                ref={manualInputRef}
-                autoFocus
-              />
-              <Button onClick={() => processBarcode(barcodeInput)} disabled={!barcodeInput || isProcessing}>
-                Scan
-              </Button>
-            </div>
-          )}
-        </div>
+        {manualEntry && (
+          <div className="flex flex-1 items-center gap-2">
+            <input
+              type="text"
+              value={barcodeInput}
+              onChange={(e) => setBarcodeInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && processBarcode(barcodeInput)}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder="Enter barcode or ID"
+              ref={manualInputRef}
+              autoFocus
+            />
+            <Button onClick={() => processBarcode(barcodeInput)} disabled={!barcodeInput || isProcessing}>
+              Scan
+            </Button>
+          </div>
+        )}
         
         {!manualEntry && (
           <div className={`flex items-center justify-center p-8 border-2 border-dashed rounded-md ${isScanning ? 'bg-green-100 dark:bg-green-900/20 border-green-400 dark:border-green-700' : 'bg-muted/50'} transition-colors duration-300`}>
@@ -281,8 +333,9 @@ export function Home() {
                 {isProcessing ? "Processing..." : isScanning ? "Scanning..." : "Ready to Scan"}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {barcodeInput ? `Receiving: ${barcodeInput}` : "Point the scanner at a barcode or ID"}
+                {barcodeInput ? `Receiving: ${barcodeInput}` : pdaMode ? "Point PDA scanner at a barcode" : "Point scanner at a barcode or ID"}
               </p>
+              
               {/* Hidden input to help with focus */}
               <input 
                 type="text"
@@ -292,6 +345,27 @@ export function Home() {
                 ref={manualInputRef}
                 tabIndex={-1}
               />
+            </div>
+          </div>
+        )}
+        
+        {/* Debug Information */}
+        {debugMode && (
+          <div className="border rounded-md p-3 bg-yellow-50 dark:bg-yellow-900/20 overflow-auto max-h-32">
+            <div className="flex items-center gap-2 mb-2">
+              <Bug className="h-4 w-4" />
+              <h4 className="font-medium">Scanner Debug</h4>
+            </div>
+            <div className="text-xs font-mono">
+              {keyEvents.length > 0 ? (
+                <ul className="space-y-1">
+                  {keyEvents.map((event, i) => (
+                    <li key={i} className="truncate">{event}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No events captured yet. Try scanning a barcode.</p>
+              )}
             </div>
           </div>
         )}
