@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { useAppStore } from '@/lib/store'
 import { fetchGoogleSheetData, printLabel, formatCurrency } from '@/lib/utils'
-import { Printer, Barcode, AlertTriangle, X, Bug } from 'lucide-react'
+import { Printer, Barcode, AlertTriangle, X, Bug, ScanLine } from 'lucide-react'
 import { LabelPreview } from '@/components/LabelPreview'
 import { PrintOptions } from '@/lib/types'
 
@@ -17,6 +17,7 @@ export function Home() {
   const [isScanning, setIsScanning] = useState(false)
   const [debugMode, setDebugMode] = useState(false)
   const [keyEvents, setKeyEvents] = useState<string[]>([])
+  const [scanLinePosition, setScanLinePosition] = useState(20)
   
   // Refs
   const scannerInputRef = useRef<HTMLInputElement>(null)
@@ -35,6 +36,28 @@ export function Home() {
     setPrintStatus,
     setError
   } = useAppStore()
+
+  // Animate scan line
+  useEffect(() => {
+    if (!isScanning) return;
+    
+    let direction = 1;
+    let position = 20;
+    
+    const animationInterval = setInterval(() => {
+      position += direction * 2;
+      
+      if (position >= 80) {
+        direction = -1;
+      } else if (position <= 20) {
+        direction = 1;
+      }
+      
+      setScanLinePosition(position);
+    }, 50);
+    
+    return () => clearInterval(animationInterval);
+  }, [isScanning]);
 
   // Check if settings are configured
   useEffect(() => {
@@ -277,26 +300,59 @@ export function Home() {
         )}
         
         {!manualEntry && (
-          <div className={`flex items-center justify-center p-8 border-2 border-dashed rounded-md ${isScanning ? 'bg-green-100 dark:bg-green-900/20 border-green-400 dark:border-green-700' : 'bg-muted/50'} transition-colors duration-300`}>
-            <div className="flex flex-col items-center text-center">
-              <Barcode className={`h-10 w-10 mb-2 ${isScanning ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'} transition-colors duration-300`} />
-              <h3 className="text-lg font-medium">
-                {isProcessing ? "Processing..." : isScanning ? "Scanning..." : "Ready to Scan"}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {barcodeInput ? `Receiving: ${barcodeInput}` : "Point scanner at a barcode"}
-              </p>
+          <div className="border-2 border-dashed rounded-md overflow-hidden">
+            {/* Scan box header */}
+            <div className="bg-muted p-2 flex items-center justify-center border-b">
+              <Barcode className="h-5 w-5 mr-2 text-muted-foreground" />
+              <span className="font-medium">SCAN BARCODE HERE</span>
+            </div>
+            
+            {/* Scan target area */}
+            <div className={`p-0 relative ${isScanning ? 'bg-green-100 dark:bg-green-900/20' : 'bg-white dark:bg-gray-950'}`}>
+              {/* Corner markers for visual alignment */}
+              <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary" />
+              <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary" />
+              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary" />
+              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary" />
               
-              {/* Dedicated scanner input - always kept in focus */}
-              <input 
-                type="text"
-                className="opacity-100 h-8 border rounded px-2 w-full mt-4 text-sm"
-                onChange={handleScannerInputChange}
-                onKeyDown={handleScannerKeyDown}
-                ref={scannerInputRef}
-                autoFocus
-                placeholder="Scanner will type here"
-              />
+              {/* Scanning line with simple animation */}
+              {isScanning && (
+                <div className="absolute left-0 right-0 h-1 bg-primary/60 transition-all duration-300 ease-in-out"
+                     style={{
+                       top: `${scanLinePosition}%`,
+                     }} />
+              )}
+              
+              {/* Status indicators */}
+              <div className="p-8 flex flex-col items-center justify-center min-h-[200px]">
+                <div className={`text-lg font-medium mb-2 ${isScanning ? 'text-green-600 dark:text-green-400' : ''}`}>
+                  {isProcessing ? "Processing..." : isScanning ? "Scanning..." : "Ready to Scan"}
+                </div>
+                
+                {barcodeInput && (
+                  <div className="text-sm font-mono bg-muted/50 p-2 rounded-md mb-4 max-w-full overflow-hidden text-ellipsis">
+                    {barcodeInput}
+                  </div>
+                )}
+                
+                {/* The actual input field (styled for visibility) */}
+                <div className="w-full max-w-md relative">
+                  <input 
+                    type="text"
+                    className="w-full border-2 border-primary rounded-md py-3 px-4 text-center font-medium shadow-sm focus:ring-2 focus:ring-primary focus:border-primary"
+                    onChange={handleScannerInputChange}
+                    onKeyDown={handleScannerKeyDown}
+                    ref={scannerInputRef}
+                    autoFocus
+                    placeholder="Click or tap here to activate scanner"
+                  />
+                  <ScanLine className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-primary" />
+                </div>
+                
+                <p className="text-sm text-muted-foreground mt-4">
+                  Point your scanner at the box above and scan
+                </p>
+              </div>
             </div>
           </div>
         )}
