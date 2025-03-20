@@ -15,6 +15,7 @@ export function Home() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [lastKeypressTime, setLastKeypressTime] = useState(0)
+  const [barcodeBuffer, setBarcodeBuffer] = useState('') // New buffer for collecting barcode characters
   const barcodeTimeoutRef = useRef<number | null>(null)
   const manualInputRef = useRef<HTMLInputElement>(null)
   
@@ -61,6 +62,30 @@ export function Home() {
     }
   }, [manualEntry])
 
+  // Set up a timer to process barcode after a period of inactivity
+  useEffect(() => {
+    if (!manualEntry && barcodeBuffer.length > 3) {
+      // Clear any existing timeout
+      if (barcodeTimeoutRef.current !== null) {
+        window.clearTimeout(barcodeTimeoutRef.current);
+      }
+      
+      // Set a new timeout - if no keypress is detected for 150ms, process the barcode
+      barcodeTimeoutRef.current = window.setTimeout(() => {
+        console.log('Auto-processing barcode from buffer:', barcodeBuffer);
+        setBarcodeInput(barcodeBuffer);
+        processBarcode(barcodeBuffer);
+        setBarcodeBuffer(''); // Clear the buffer after processing
+      }, 150);
+    }
+    
+    return () => {
+      if (barcodeTimeoutRef.current !== null) {
+        window.clearTimeout(barcodeTimeoutRef.current);
+      }
+    };
+  }, [barcodeBuffer, manualEntry]);
+
   // Handle barcode scan input
   useEffect(() => {
     // Auto barcode detection - barcodes from scanners come in rapidly
@@ -80,11 +105,6 @@ export function Home() {
         return
       }
       
-      // Clear any pending timeout
-      if (barcodeTimeoutRef.current !== null) {
-        window.clearTimeout(barcodeTimeoutRef.current)
-      }
-      
       // If manual entry is enabled, let the input handle it
       if (manualEntry) {
         if (e.key === 'Enter' && barcodeInput) {
@@ -94,28 +114,28 @@ export function Home() {
       }
       
       // Process the key input
-      if (e.key === 'Enter' && barcodeInput) {
-        // Submit on Enter
+      if (e.key === 'Enter' && barcodeBuffer.length > 0) {
+        // Submit on Enter (some scanners send Enter)
         e.preventDefault()
-        processBarcode(barcodeInput)
+        console.log('Enter pressed, processing barcode:', barcodeBuffer);
+        setBarcodeInput(barcodeBuffer);
+        processBarcode(barcodeBuffer);
+        setBarcodeBuffer(''); // Clear buffer after processing
       } else if (/^[a-zA-Z0-9-]$/.test(e.key)) {
         // Key is a valid barcode character
         
         // If this is the first character or there's been a long pause,
         // assume this is the start of a new barcode
-        if (barcodeInput === '' || timeDiff > 500) {
-          setBarcodeInput(e.key)
+        if (barcodeBuffer === '' || timeDiff > 500) {
+          console.log('Starting new barcode scan');
+          setBarcodeBuffer(e.key);
+          setBarcodeInput(e.key); // Update the display
         } else {
-          // Add to the current barcode input
-          setBarcodeInput(prev => prev + e.key)
+          // Add to the current barcode buffer
+          const newBuffer = barcodeBuffer + e.key;
+          setBarcodeBuffer(newBuffer);
+          setBarcodeInput(newBuffer); // Update the display
         }
-        
-        // Set a timeout to automatically process the barcode after a pause
-        barcodeTimeoutRef.current = window.setTimeout(() => {
-          if (barcodeInput.length > 3) {
-            processBarcode(barcodeInput + e.key)
-          }
-        }, 300)
       }
       
       setLastKeypressTime(now)
@@ -128,12 +148,13 @@ export function Home() {
         window.clearTimeout(barcodeTimeoutRef.current)
       }
     }
-  }, [barcodeInput, manualEntry, lastKeypressTime])
+  }, [barcodeBuffer, manualEntry, lastKeypressTime])
   
   // Process the barcode and fetch data
   async function processBarcode(barcode: string) {
     if (!barcode || isProcessing) return
     
+    console.log('Processing barcode:', barcode);
     setIsProcessing(true)
     setError(null)
     
