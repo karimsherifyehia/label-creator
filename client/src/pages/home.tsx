@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
@@ -14,6 +14,9 @@ export function Home() {
   const [barcodeInput, setBarcodeInput] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [lastKeypressTime, setLastKeypressTime] = useState(0)
+  const barcodeTimeoutRef = useRef<number | null>(null)
+  const manualInputRef = useRef<HTMLInputElement>(null)
   
   const {
     googleSheetUrl,
@@ -51,21 +54,81 @@ export function Home() {
     }
   }, [googleSheetUrl, googleSlideUrl, selectedPrinter, printNodeConfig, navigate, toast])
 
+  // Focus on the hidden input when in manual mode
+  useEffect(() => {
+    if (manualEntry && manualInputRef.current) {
+      manualInputRef.current.focus()
+    }
+  }, [manualEntry])
+
   // Handle barcode scan input
   useEffect(() => {
+    // Auto barcode detection - barcodes from scanners come in rapidly
     function handleKeyDown(e: KeyboardEvent) {
-      if (!manualEntry && e.key !== 'Enter' && /^[a-zA-Z0-9-]$/.test(e.key)) {
-        setBarcodeInput(prev => prev + e.key)
+      const now = Date.now()
+      const timeDiff = now - lastKeypressTime
+      
+      // Don't capture keys if they're being typed in an input field (except our hidden input)
+      const isTypingInInput = document.activeElement?.tagName === 'INPUT' && 
+                              document.activeElement !== manualInputRef.current
+
+      // Don't capture if we're in a contentEditable or textarea
+      const isTypingElsewhere = document.activeElement?.getAttribute('contenteditable') === 'true' ||
+                               document.activeElement?.tagName === 'TEXTAREA'
+                             
+      if (isTypingInInput || isTypingElsewhere) {
+        return
       }
       
-      if (e.key === 'Enter' && barcodeInput) {
-        processBarcode(barcodeInput)
+      // Clear any pending timeout
+      if (barcodeTimeoutRef.current !== null) {
+        window.clearTimeout(barcodeTimeoutRef.current)
       }
+      
+      // If manual entry is enabled, let the input handle it
+      if (manualEntry) {
+        if (e.key === 'Enter' && barcodeInput) {
+          processBarcode(barcodeInput)
+        }
+        return
+      }
+      
+      // Process the key input
+      if (e.key === 'Enter' && barcodeInput) {
+        // Submit on Enter
+        e.preventDefault()
+        processBarcode(barcodeInput)
+      } else if (/^[a-zA-Z0-9-]$/.test(e.key)) {
+        // Key is a valid barcode character
+        
+        // If this is the first character or there's been a long pause,
+        // assume this is the start of a new barcode
+        if (barcodeInput === '' || timeDiff > 500) {
+          setBarcodeInput(e.key)
+        } else {
+          // Add to the current barcode input
+          setBarcodeInput(prev => prev + e.key)
+        }
+        
+        // Set a timeout to automatically process the barcode after a pause
+        barcodeTimeoutRef.current = window.setTimeout(() => {
+          if (barcodeInput.length > 3) {
+            processBarcode(barcodeInput + e.key)
+          }
+        }, 300)
+      }
+      
+      setLastKeypressTime(now)
     }
 
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [barcodeInput, manualEntry])
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      if (barcodeTimeoutRef.current !== null) {
+        window.clearTimeout(barcodeTimeoutRef.current)
+      }
+    }
+  }, [barcodeInput, manualEntry, lastKeypressTime])
   
   // Process the barcode and fetch data
   async function processBarcode(barcode: string) {
@@ -178,8 +241,11 @@ export function Home() {
                 type="text"
                 value={barcodeInput}
                 onChange={(e) => setBarcodeInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && processBarcode(barcodeInput)}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 placeholder="Enter barcode or ID"
+                ref={manualInputRef}
+                autoFocus
               />
               <Button onClick={() => processBarcode(barcodeInput)} disabled={!barcodeInput || isProcessing}>
                 Scan
@@ -198,6 +264,15 @@ export function Home() {
               <p className="text-sm text-muted-foreground">
                 {barcodeInput ? `Receiving: ${barcodeInput}` : "Point the scanner at a barcode or ID"}
               </p>
+              {/* Hidden input to capture focus but remain invisible */}
+              <input 
+                type="text"
+                className="opacity-0 position-absolute h-0 w-0 pointer-events-none"
+                value={barcodeInput}
+                onChange={() => {}}
+                ref={manualInputRef}
+                tabIndex={-1}
+              />
             </div>
           </div>
         )}
