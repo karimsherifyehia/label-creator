@@ -15,14 +15,11 @@ export function Home() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [isScanning, setIsScanning] = useState(false)
-  const [pdaMode, setPdaMode] = useState(true) // Default to PDA mode ON
   const [debugMode, setDebugMode] = useState(false)
   const [keyEvents, setKeyEvents] = useState<string[]>([])
   
-  // Simple barcode buffer to collect characters
-  const barcodeBufferRef = useRef('')
-  const lastKeypressTimeRef = useRef(Date.now())
-  const scanTimeoutRef = useRef<number | null>(null)
+  // Refs
+  const scannerInputRef = useRef<HTMLInputElement>(null)
   const manualInputRef = useRef<HTMLInputElement>(null)
   
   const {
@@ -61,118 +58,79 @@ export function Home() {
     }
   }, [googleSheetUrl, googleSlideUrl, selectedPrinter, printNodeConfig, navigate, toast])
 
-  // Focus on the input when in manual mode
+  // Focus on the right input
   useEffect(() => {
     if (manualEntry && manualInputRef.current) {
       manualInputRef.current.focus()
+    } else if (!manualEntry && scannerInputRef.current) {
+      scannerInputRef.current.focus()
     }
   }, [manualEntry])
-
-  // Direct PDA scan mode - uses an aggressive approach to catch all scan types
+  
+  // Keep scanner input focused when in scanner mode
   useEffect(() => {
-    if (!pdaMode || manualEntry) return;
+    if (manualEntry || !scannerInputRef.current) return;
     
-    // Listen for pasted content - some scanners simulate paste
-    const handlePaste = (e: ClipboardEvent) => {
-      const pastedText = e.clipboardData?.getData('text');
-      if (pastedText && pastedText.length > 3) {
-        if (debugMode) {
-          setKeyEvents(prev => [...prev, `Paste detected: ${pastedText}`]);
-        }
-        processBarcode(pastedText);
-      }
-    };
-    
-    // Setup sequence detection for rapid key entry
-    let keySequence = '';
-    let lastKeyTime = 0;
-    let sequenceTimer: number | null = null;
-    
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if manually typing in fields
-      if ((document.activeElement?.tagName === 'INPUT' && document.activeElement !== manualInputRef.current) ||
-          document.activeElement?.tagName === 'TEXTAREA' ||
-          document.activeElement?.getAttribute('contenteditable') === 'true') {
-        return;
-      }
-      
-      // Record key events for debugging
-      if (debugMode) {
-        setKeyEvents(prev => {
-          const newEvents = [...prev, `Key: ${e.key} (${Date.now()})`];
-          return newEvents.slice(-10); // Keep last 10 events
-        });
-      }
-      
-      // Handle enter or tab as terminators
-      if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault();
-        if (keySequence.length > 3) {
+    const refocusInput = () => {
+      // Short timeout to let browser process any click events first
+      setTimeout(() => {
+        if (scannerInputRef.current && document.activeElement !== scannerInputRef.current) {
+          scannerInputRef.current.focus();
           if (debugMode) {
-            setKeyEvents(prev => [...prev, `Scan completed by ${e.key}: ${keySequence}`]);
+            setKeyEvents(prev => [...prev, `Refocused scanner input (${Date.now()})`]);
           }
-          processBarcode(keySequence);
-          keySequence = '';
-          if (sequenceTimer) clearTimeout(sequenceTimer);
         }
-        return;
-      }
-      
-      const now = Date.now();
-      const timeSinceLastKey = now - lastKeyTime;
-      
-      // Typical scanner sends keys very rapidly (<50ms apart)
-      const isPossiblyScanner = timeSinceLastKey < 50;
-      
-      // If it's been a while, start fresh
-      if (timeSinceLastKey > 500) {
-        keySequence = '';
-        setIsScanning(true);
-      }
-      
-      // Only collect reasonable barcode characters
-      if (/^[\w\d\-\/\+\.=%:;]$/.test(e.key)) {
-        keySequence += e.key;
-        setBarcodeInput(keySequence);
-        
-        // Clear any pending timeout
-        if (sequenceTimer) clearTimeout(sequenceTimer);
-        
-        // Set new timeout - if keys stop coming, process what we have
-        sequenceTimer = window.setTimeout(() => {
-          if (keySequence.length > 3) {
-            if (debugMode) {
-              setKeyEvents(prev => [...prev, `Scan completed by timeout: ${keySequence}`]);
-            }
-            processBarcode(keySequence);
-            keySequence = '';
-            setIsScanning(false);
-          }
-        }, 300); // Longer timeout for PDA
-      }
-      
-      lastKeyTime = now;
+      }, 100);
     };
     
-    // Handle focus events - some scanners trigger focus before sending keys
-    const handleFocus = (e: FocusEvent) => {
-      const target = e.target as HTMLElement;
-      if (debugMode) {
-        setKeyEvents(prev => [...prev, `Focus event on: ${target?.tagName || 'unknown'}`]);
-      }
-    };
+    // Focus when clicking anywhere in the document
+    document.addEventListener('click', refocusInput);
     
-    document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('paste', handlePaste);
-    document.addEventListener('focus', handleFocus, true);
+    // Also refocus periodically
+    const interval = setInterval(refocusInput, 2000);
+    
+    // Initial focus
+    scannerInputRef.current.focus();
     
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.removeEventListener('paste', handlePaste);
-      document.removeEventListener('focus', handleFocus, true);
-      if (sequenceTimer) clearTimeout(sequenceTimer);
+      document.removeEventListener('click', refocusInput);
+      clearInterval(interval);
     };
-  }, [pdaMode, manualEntry, debugMode]);
+  }, [manualEntry, debugMode]);
+  
+  // Handle scanner input changes
+  const handleScannerInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setBarcodeInput(value);
+    setIsScanning(true);
+    
+    if (debugMode) {
+      setKeyEvents(prev => [...prev, `Input value: ${value} (${Date.now()})`]);
+    }
+  };
+  
+  // Process scan on Enter/Tab or when input finishes
+  const handleScannerKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (debugMode) {
+      setKeyEvents(prev => [...prev, `Key: ${e.key} (${Date.now()})`]);
+    }
+    
+    // Process on Enter
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      const value = scannerInputRef.current?.value || '';
+      
+      if (value.length > 0) {
+        if (debugMode) {
+          setKeyEvents(prev => [...prev, `Processing scan: ${value} (${Date.now()})`]);
+        }
+        processBarcode(value);
+        if (scannerInputRef.current) {
+          scannerInputRef.current.value = '';
+        }
+      }
+    }
+  };
   
   // Process the barcode and fetch data
   async function processBarcode(barcode: string) {
@@ -182,6 +140,7 @@ export function Home() {
     setIsProcessing(true)
     setError(null)
     setIsScanning(false)
+    setBarcodeInput('');
     
     try {
       const data = await fetchGoogleSheetData(googleSheetUrl, barcode)
@@ -209,7 +168,10 @@ export function Home() {
       setError('Failed to fetch item data')
     } finally {
       setIsProcessing(false)
-      setBarcodeInput('')
+      if (scannerInputRef.current) {
+        scannerInputRef.current.value = '';
+        scannerInputRef.current.focus();
+      }
     }
   }
   
@@ -277,17 +239,6 @@ export function Home() {
         <div className="flex items-center space-x-2">
           <input 
             type="checkbox" 
-            id="pda-mode" 
-            checked={pdaMode} 
-            onChange={(e) => setPdaMode(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-          />
-          <label htmlFor="pda-mode" className="text-sm font-medium">PDA Scanner Mode</label>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <input 
-            type="checkbox" 
             id="debug-mode" 
             checked={debugMode} 
             onChange={(e) => setDebugMode(e.target.checked)}
@@ -333,17 +284,18 @@ export function Home() {
                 {isProcessing ? "Processing..." : isScanning ? "Scanning..." : "Ready to Scan"}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {barcodeInput ? `Receiving: ${barcodeInput}` : pdaMode ? "Point PDA scanner at a barcode" : "Point scanner at a barcode or ID"}
+                {barcodeInput ? `Receiving: ${barcodeInput}` : "Point scanner at a barcode"}
               </p>
               
-              {/* Hidden input to help with focus */}
+              {/* Dedicated scanner input - always kept in focus */}
               <input 
                 type="text"
-                className="opacity-0 position-absolute h-0 w-0 pointer-events-none"
-                value={barcodeInput}
-                onChange={() => {}}
-                ref={manualInputRef}
-                tabIndex={-1}
+                className="opacity-100 h-8 border rounded px-2 w-full mt-4 text-sm"
+                onChange={handleScannerInputChange}
+                onKeyDown={handleScannerKeyDown}
+                ref={scannerInputRef}
+                autoFocus
+                placeholder="Scanner will type here"
               />
             </div>
           </div>
