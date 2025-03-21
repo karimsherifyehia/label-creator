@@ -27,33 +27,34 @@ async function populateGoogleSlide(slideUrl, itemData) {
     const presentationId = extractPresentationId(slideUrl);
     console.log('Extracted Presentation ID:', presentationId);
     
-    // Check if environment variables are set
-    if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
-      console.warn('Google API credentials not found in environment variables');
+    // Set up authentication - for public slides, we can use API key authentication
+    // Create a JWT client using available credentials or default public access
+    let auth;
+    
+    // First try to use service account if available
+    if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+      console.log('Using service account authentication');
+      const credentials = {
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        private_key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n')
+      };
       
-      // If USE_MOCK_PDF is set, use mock PDF instead of failing
-      if (process.env.USE_MOCK_PDF === 'true') {
-        console.log('Using mock PDF due to missing Google API credentials');
-        return getMockPdfBuffer();
-      } else {
-        throw new Error('Missing Google API credentials. Set GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables in Netlify.');
-      }
+      auth = new google.auth.JWT(
+        credentials.client_email,
+        null,
+        credentials.private_key,
+        ['https://www.googleapis.com/auth/presentations', 
+         'https://www.googleapis.com/auth/drive']
+      );
+    } else {
+      // For public slides with no restrictions
+      console.log('Using public access for shared template');
+      // Use API key if available, otherwise try anonymous access
+      auth = new google.auth.GoogleAuth({
+        scopes: ['https://www.googleapis.com/auth/presentations.readonly',
+                'https://www.googleapis.com/auth/drive.readonly']
+      });
     }
-    
-    // Set up authentication using environment variables
-    const credentials = {
-      client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n')
-    };
-    
-    // Create JWT auth client
-    const auth = new google.auth.JWT(
-      credentials.client_email,
-      null,
-      credentials.private_key,
-      ['https://www.googleapis.com/auth/presentations', 
-       'https://www.googleapis.com/auth/drive']
-    );
     
     // Create Slides and Drive API clients
     const slides = google.slides({ version: 'v1', auth });
@@ -159,32 +160,15 @@ async function populateGoogleSlide(slideUrl, itemData) {
     // Return the PDF as buffer
     return Buffer.from(response.data);
   } catch (error) {
-    console.error('Error populating Google Slide:', error);
+    console.error('Error populating Google Slide:', error.stack);
     
-    // If authentication failed, provide a more specific error
+    // Provide detailed error information
     if (error.message.includes('auth')) {
-      throw new Error('Google API authentication failed. Check your credentials.');
-    }
-    
-    // If this is a Netlify deployment without proper Google API setup,
-    // fall back to a mock PDF for development and testing
-    if (process.env.USE_MOCK_PDF === 'true') {
-      console.log('Using mock PDF (fallback) for testing');
-      return getMockPdfBuffer();
+      throw new Error(`Google API authentication issue: ${error.message}. The slide template may not be accessible. Please ensure it's shared with anyone with the link.`);
     }
     
     throw new Error(`Failed to populate Google Slide template: ${error.message}`);
   }
-}
-
-// Helper function to get a mock PDF buffer
-function getMockPdfBuffer() {
-  console.log('Generating mock PDF for testing or fallback');
-  // This is a tiny valid PDF for demo purposes
-  return Buffer.from(
-    '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/MediaBox[0 0 3 3]>>endobj\nxref\n0 4\n0000000000 65535 f\n0000000010 00000 n\n0000000053 00000 n\n0000000102 00000 n\ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n149\n%%EOF',
-    'utf-8'
-  );
 }
 
 // Function to print using PrintNode API
