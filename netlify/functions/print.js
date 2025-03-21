@@ -27,10 +27,23 @@ async function populateGoogleSlide(slideUrl, itemData) {
     const presentationId = extractPresentationId(slideUrl);
     console.log('Extracted Presentation ID:', presentationId);
     
+    // Check if environment variables are set
+    if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+      console.warn('Google API credentials not found in environment variables');
+      
+      // If USE_MOCK_PDF is set, use mock PDF instead of failing
+      if (process.env.USE_MOCK_PDF === 'true') {
+        console.log('Using mock PDF due to missing Google API credentials');
+        return getMockPdfBuffer();
+      } else {
+        throw new Error('Missing Google API credentials. Set GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables in Netlify.');
+      }
+    }
+    
     // Set up authentication using environment variables
     const credentials = {
       client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+      private_key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n')
     };
     
     // Create JWT auth client
@@ -71,7 +84,9 @@ async function populateGoogleSlide(slideUrl, itemData) {
     
     // Add any other fields from itemData
     Object.keys(itemData).forEach(key => {
-      replacements[`{{${key}}}`] = itemData[key].toString();
+      if (itemData[key] !== null && itemData[key] !== undefined) {
+        replacements[`{{${key}}}`] = itemData[key].toString();
+      }
     });
     
     console.log('Replacements dictionary:', replacements);
@@ -155,15 +170,21 @@ async function populateGoogleSlide(slideUrl, itemData) {
     // fall back to a mock PDF for development and testing
     if (process.env.USE_MOCK_PDF === 'true') {
       console.log('Using mock PDF (fallback) for testing');
-      const mockPdfBuffer = Buffer.from(
-        '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/MediaBox[0 0 3 3]>>endobj\nxref\n0 4\n0000000000 65535 f\n0000000010 00000 n\n0000000053 00000 n\n0000000102 00000 n\ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n149\n%%EOF',
-        'utf-8'
-      );
-      return mockPdfBuffer;
+      return getMockPdfBuffer();
     }
     
     throw new Error(`Failed to populate Google Slide template: ${error.message}`);
   }
+}
+
+// Helper function to get a mock PDF buffer
+function getMockPdfBuffer() {
+  console.log('Generating mock PDF for testing or fallback');
+  // This is a tiny valid PDF for demo purposes
+  return Buffer.from(
+    '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/MediaBox[0 0 3 3]>>endobj\nxref\n0 4\n0000000000 65535 f\n0000000010 00000 n\n0000000053 00000 n\n0000000102 00000 n\ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n149\n%%EOF',
+    'utf-8'
+  );
 }
 
 // Function to print using PrintNode API
