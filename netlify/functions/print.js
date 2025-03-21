@@ -27,34 +27,28 @@ async function populateGoogleSlide(slideUrl, itemData) {
     const presentationId = extractPresentationId(slideUrl);
     console.log('Extracted Presentation ID:', presentationId);
     
-    // Set up authentication - for public slides, we can use API key authentication
-    // Create a JWT client using available credentials or default public access
-    let auth;
-    
-    // First try to use service account if available
-    if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
-      console.log('Using service account authentication');
-      const credentials = {
-        client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        private_key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n')
-      };
-      
-      auth = new google.auth.JWT(
-        credentials.client_email,
-        null,
-        credentials.private_key,
-        ['https://www.googleapis.com/auth/presentations', 
-         'https://www.googleapis.com/auth/drive']
-      );
-    } else {
-      // For public slides with no restrictions
-      console.log('Using public access for shared template');
-      // Use API key if available, otherwise try anonymous access
-      auth = new google.auth.GoogleAuth({
-        scopes: ['https://www.googleapis.com/auth/presentations.readonly',
-                'https://www.googleapis.com/auth/drive.readonly']
-      });
+    // Set up auth - we need service account credentials for this to work
+    if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+      throw new Error('Google API credentials are required. Please set GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables in Netlify.');
     }
+    
+    // Always use service account auth - public access doesn't work in serverless environments
+    console.log('Using service account authentication');
+    const credentials = {
+      client_email: process.env.GOOGLE_CLIENT_EMAIL,
+      private_key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n')
+    };
+    
+    // Create a proper JWT auth client 
+    const auth = new google.auth.JWT(
+      credentials.client_email,
+      null,
+      credentials.private_key,
+      [
+        'https://www.googleapis.com/auth/presentations',
+        'https://www.googleapis.com/auth/drive'
+      ]
+    );
     
     // Create Slides and Drive API clients
     const slides = google.slides({ version: 'v1', auth });
@@ -163,8 +157,8 @@ async function populateGoogleSlide(slideUrl, itemData) {
     console.error('Error populating Google Slide:', error.stack);
     
     // Provide detailed error information
-    if (error.message.includes('auth')) {
-      throw new Error(`Google API authentication issue: ${error.message}. The slide template may not be accessible. Please ensure it's shared with anyone with the link.`);
+    if (error.message.includes('auth') || error.message.includes('credentials')) {
+      throw new Error(`Google API authentication issue: ${error.message}. Please check your Google credentials and ensure the service account has access to the slide.`);
     }
     
     throw new Error(`Failed to populate Google Slide template: ${error.message}`);

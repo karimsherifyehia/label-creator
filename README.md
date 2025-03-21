@@ -17,18 +17,35 @@ A web application for generating and printing product labels using Google Sheets
 Set these environment variables in your Netlify site settings:
 
 #### Google API Authentication
-To use the Google Slides template feature, you need to set up a service account:
+To use the Google Slides template feature, you **must** set up a service account:
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project or select an existing one
 3. Enable the Google Slides API and Google Drive API
-4. Create a Service Account with the following permissions:
-   - Google Slides API: Slides Editor
-   - Google Drive API: Drive File Reader
-5. Create and download a JSON key for the service account
+4. Create a Service Account:
+   - Go to "IAM & Admin" > "Service Accounts"
+   - Click "Create Service Account"
+   - Give it a name like "Label Creator Service Account"
+   - Grant it "Editor" role
+   - Click "Done"
+5. Create a key for your service account:
+   - Find your service account in the list and click the three dots menu
+   - Select "Manage keys"
+   - Click "Add Key" > "Create new key"
+   - Choose JSON as the key type
+   - Download the JSON key file
 6. In Netlify, set these environment variables:
-   - `GOOGLE_CLIENT_EMAIL`: The email from the service account JSON
-   - `GOOGLE_PRIVATE_KEY`: The private key from the service account JSON (include the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` parts)
+   - `GOOGLE_CLIENT_EMAIL`: The email from the service account JSON (looks like `service-account-name@project-id.iam.gserviceaccount.com`)
+   - `GOOGLE_PRIVATE_KEY`: Copy the entire private key string from the JSON file, including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` parts
+
+7. **Important**: Share your Google Slides template with the service account email:
+   - Open your Google Slides template
+   - Click the "Share" button
+   - Add the service account email address
+   - Give it "Editor" permission
+   - Click "Share"
+
+**Note**: Unlike regular Google accounts, a service account can only access files explicitly shared with it.
 
 #### PrintNode Configuration
 To use PrintNode integration:
@@ -60,9 +77,15 @@ To use PrintNode integration:
 If variables like `{{name}}` are not being replaced in your template:
 
 1. Make sure your Google Slides template uses the exact variable format: `{{variableName}}`
-2. Check that the Google API is properly authenticated
-3. Verify the service account has access to the Google Slides template
-4. Share your Google Slides template with the service account email address
+2. Verify that you've properly set up the Google API service account:
+   - Check that both `GOOGLE_CLIENT_EMAIL` and `GOOGLE_PRIVATE_KEY` are set in Netlify environment variables
+   - Make sure the service account email format is correct
+   - Ensure the private key includes the header and footer lines
+3. **Confirm** that your Google Slides template is shared with the service account email
+4. Check Netlify function logs for more detailed error information:
+   - Go to your Netlify dashboard
+   - Navigate to Functions > print
+   - Review the recent invocation logs
 
 ### PrintNode Authentication Issues
 If you see "Basic auth username is not valid UTF8" errors:
